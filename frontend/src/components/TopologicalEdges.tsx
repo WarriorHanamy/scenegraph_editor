@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { Line } from "@react-three/drei";
 import type { TopologicalEdge } from "../lib/types";
 
 interface Props {
@@ -6,6 +7,7 @@ interface Props {
   visible: boolean;
   selectedArea: number | null;
   selectedEdgeKey: string | null;
+  hoveredEdgeKey: string | null;
 }
 
 /**
@@ -13,7 +15,13 @@ interface Props {
  * Click handling is done by the parent ClickHandler component.
  * Selected edge is highlighted in red.
  */
-export function TopologicalEdges({ edges, visible, selectedArea, selectedEdgeKey }: Props) {
+export function TopologicalEdges({
+  edges,
+  visible,
+  selectedArea,
+  selectedEdgeKey,
+  hoveredEdgeKey,
+}: Props) {
   const lines = useMemo(() => {
     const pos = new Float32Array(edges.length * 2 * 3);
     const col = new Float32Array(edges.length * 2 * 3);
@@ -32,20 +40,17 @@ export function TopologicalEdges({ edges, visible, selectedArea, selectedEdgeKey
     return { positions: pos, colors: col, count: edges.length * 2 };
   }, [edges]);
 
-  const highlightedLine = useMemo(() => {
-    if (!selectedEdgeKey) return null;
-    const [a, b] = selectedEdgeKey.split("_").map(Number);
-    const e = edges.find(
-      (x) => (x.srcId === a && x.dstId === b) || (x.srcId === b && x.dstId === a),
-    );
-    if (!e) return null;
-
-    const pos = new Float32Array([
-      e.srcPos[0], e.srcPos[1], e.srcPos[2],
-      e.dstPos[0], e.dstPos[1], e.dstPos[2],
-    ]);
-    return { positions: pos, count: 2 };
-  }, [selectedEdgeKey, edges]);
+  const selectedLine = useMemo(
+    () => findEdgePoints(edges, selectedEdgeKey),
+    [selectedEdgeKey, edges],
+  );
+  const hoveredLine = useMemo(
+    () =>
+      hoveredEdgeKey !== selectedEdgeKey
+        ? findEdgePoints(edges, hoveredEdgeKey)
+        : null,
+    [hoveredEdgeKey, selectedEdgeKey, edges],
+  );
 
   if (!visible || lines.count === 0) return null;
 
@@ -59,16 +64,44 @@ export function TopologicalEdges({ edges, visible, selectedArea, selectedEdgeKey
         <lineBasicMaterial vertexColors transparent opacity={selectedArea !== null ? 0.25 : 0.45} linewidth={1} depthTest />
       </lineSegments>
 
-      {highlightedLine && (
-        <lineSegments>
-          <bufferGeometry>
-            <bufferAttribute attach="attributes-position" args={[highlightedLine.positions, 3] as [Float32Array, number]} count={highlightedLine.count} />
-          </bufferGeometry>
-          <lineBasicMaterial color="#ff3333" linewidth={2} transparent opacity={0.95} depthTest />
-        </lineSegments>
+      {hoveredLine && (
+        <Line
+          points={hoveredLine}
+          color="#00e5ff"
+          lineWidth={3}
+          transparent
+          opacity={0.95}
+          depthTest={false}
+        />
+      )}
+
+      {selectedLine && (
+        <Line
+          points={selectedLine}
+          color="#ff3333"
+          lineWidth={3}
+          transparent
+          opacity={0.95}
+          depthTest
+        />
       )}
     </>
   );
+}
+
+function findEdgePoints(
+  edges: TopologicalEdge[],
+  key: string | null,
+): [[number, number, number], [number, number, number]] | null {
+  if (!key) return null;
+  const [a, b] = key.split("_").map(Number);
+  const e = edges.find(
+    (x) =>
+      (x.srcId === a && x.dstId === b) ||
+      (x.srcId === b && x.dstId === a),
+  );
+  if (!e) return null;
+  return [e.srcPos, e.dstPos];
 }
 
 function hexRgb(h: string): [number, number, number] {

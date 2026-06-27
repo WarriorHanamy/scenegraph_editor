@@ -7,6 +7,7 @@ interface Props {
   visible: boolean;
   selectedArea: number | null;
   selectedNodeIds: Set<number>;
+  hoveredNodeId: number | null;
   editMode: boolean;
   moveNodeId: number | null;
   onNodeMoved: (id: number, pos: [number, number, number]) => void;
@@ -22,6 +23,7 @@ export function TopologicalNodes({
   visible,
   selectedArea,
   selectedNodeIds,
+  hoveredNodeId,
   editMode,
   moveNodeId,
   onNodeMoved,
@@ -50,6 +52,14 @@ export function TopologicalNodes({
   const selectedNodes = useMemo(
     () => nodes.filter((n) => selectedNodeIds.has(n.id)),
     [nodes, selectedNodeIds],
+  );
+
+  const hoveredNode = useMemo(
+    () =>
+      hoveredNodeId !== null && !selectedNodeIds.has(hoveredNodeId)
+        ? nodes.find((n) => n.id === hoveredNodeId) ?? null
+        : null,
+    [nodes, hoveredNodeId, selectedNodeIds],
   );
 
   const moveNode = useMemo(
@@ -85,6 +95,18 @@ export function TopologicalNodes({
           <meshBasicMaterial color="#ffaa00" transparent opacity={0.9} depthTest />
         </mesh>
       ))}
+
+      {hoveredNode && (
+        <mesh position={hoveredNode.position}>
+          <sphereGeometry args={[0.17, 16, 10]} />
+          <meshBasicMaterial
+            color="#00e5ff"
+            transparent
+            opacity={0.95}
+            depthTest={false}
+          />
+        </mesh>
+      )}
 
       {/* Move gizmo with TransformControls */}
       {editMode && moveNode && (

@@ -54,7 +54,7 @@ Click **Edit** in the top toolbar to enter editing mode.
 | Action       | How                              |
 | ------------ | -------------------------------- |
 | Select node  | Click a node sphere              |
-| Multi-select | Ctrl+click additional nodes      |
+| Multi-select | Shift/Ctrl/Cmd+click additional nodes |
 | Select edge  | Click on a line between nodes    |
 | Deselect all | Click empty space or press `Esc` |
 

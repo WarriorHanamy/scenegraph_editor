@@ -190,26 +190,31 @@ function applyAddEdges(root: any, edges: EdgeRef[]): void {
     const dst = polyMap.get(e.dstId);
     if (!src || !dst) continue;
 
-    const exists = (src.edges || []).some(
-      (ee: any) => Number(ee.dst_poly_id) === e.dstId,
-    );
-    if (exists) continue;
-
     const sc: V3 = src.center || [0, 0, 0];
     const dc: V3 = dst.center || [0, 0, 0];
     const length = Math.sqrt(
       (dc[0] - sc[0]) ** 2 + (dc[1] - sc[1]) ** 2 + (dc[2] - sc[2]) ** 2,
     );
 
-    if (!src.edges) src.edges = [];
-    src.edges.push({
-      dst_poly_id: e.dstId,
+    addDirectedEdge(src, e.dstId, length);
+    addDirectedEdge(dst, e.srcId, length);
+  }
+}
+
+function addDirectedEdge(src: any, dstId: number, length: number): void {
+  const exists = (src.edges || []).some(
+    (edge: any) => Number(edge.dst_poly_id) === dstId,
+  );
+  if (exists) return;
+
+  if (!src.edges) src.edges = [];
+  src.edges.push({
+      dst_poly_id: dstId,
       length,
       weight: 1.0,
       is_force_connected: false,
       path: [],
-    });
-  }
+  });
 }
 
 function applyCreatePolys(root: any, creates: CreatePoly[]): void {
