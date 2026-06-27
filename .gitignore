@@ -4,6 +4,11 @@ scene*saved
 # Node / Bun
 node_modules/
 
+# Python
+.venv/
+__pycache__/
+*.pyc
+
 # Build output
 frontend/dist/
 

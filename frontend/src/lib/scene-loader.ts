@@ -1,96 +1,106 @@
-import type { PreprocessedObject, PreprocessedArea, SceneData } from "./types";
+import type { PreprocessedObject, PreprocessedArea, PreprocessedPoly, TopologicalNode, TopologicalEdge, SceneData } from "./types";
 
-/**
- * Parse scene.bin binary format (LE).
- *
- * Layout:
- *   [u32] magic
- *   [u32] objCount
- *   For each object: [u32] id, [u32] pointCount, [u32] labelLen, [u8*] label, [f32*3] color,
- *                    [f32*pointCount*3] positions, [f32*pointCount*3] colors
- *   [u32] areaCount
- *   For each area: [u32] id, [u32] labelLen, [u8*] roomLabel, [f32*3] boxMin, [f32*3] boxMax,
- *                  [f32*3] center, [f32*3] color, [u32] neighborCount, [u32*] neighborIds
- */
 export async function loadSceneBin(url: string): Promise<SceneData> {
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`Failed to load ${url}: ${resp.status}`);
   const buf = await resp.arrayBuffer();
-  const view = new DataView(buf);
+  const v = new DataView(buf);
+  if (v.getUint32(0, true) !== 0x5347444e) throw new Error("Bad magic");
 
-  const magic = view.getUint32(0, true);
-  if (magic !== 0x5347444e) throw new Error(`Bad magic: 0x${magic.toString(16)}`);
-
-  const objCount = view.getUint32(4, true);
-  let off = 8;
+  let off = 4;
+  const objCount = v.getUint32(off, true); off += 4;
   const objects: PreprocessedObject[] = [];
 
   for (let i = 0; i < objCount; i++) {
-    const id = view.getUint32(off, true); off += 4;
-    const pointCount = view.getUint32(off, true); off += 4;
-    const labelLen = view.getUint32(off, true); off += 4;
-    const rl = Math.ceil(labelLen / 4) * 4;
-    const label = new TextDecoder().decode(new Uint8Array(buf, off, labelLen));
-    off += rl;
-    const r = view.getFloat32(off, true); off += 4;
-    const g = view.getFloat32(off, true); off += 4;
-    const b = view.getFloat32(off, true); off += 4;
-
-    const posBytes = pointCount * 3 * 4;
-    const positions = new Float32Array(buf, off, pointCount * 3);
-    off += posBytes;
-
-    const colBytes = pointCount * 3 * 4;
-    const colors = new Float32Array(buf, off, pointCount * 3);
-    off += colBytes;
-
-    objects.push({
-      id, label, pointCount,
-      colorHex: rgbHex(r, g, b),
-      positions, colors,
-    });
+    const id = v.getUint32(off, true); off += 4;
+    const N = v.getUint32(off, true); off += 4;
+    const ll = v.getUint32(off, true); off += 4;
+    const lp = Math.ceil(ll / 4) * 4;
+    const label = new TextDecoder().decode(new Uint8Array(buf, off, ll)); off += lp;
+    const cr = v.getFloat32(off, true); off += 4;
+    const cg = v.getFloat32(off, true); off += 4;
+    const cb = v.getFloat32(off, true); off += 4;
+    const fatherPolyId = v.getUint32(off, true); off += 4;
+    const cx = v.getFloat32(off, true); off += 4;
+    const cy = v.getFloat32(off, true); off += 4;
+    const cz = v.getFloat32(off, true); off += 4;
+    const pos = new Float32Array(buf, off, N * 3); off += N * 12;
+    const col = new Float32Array(buf, off, N * 3); off += N * 12;
+    objects.push({ id, label, pointCount: N, colorHex: hex(cr, cg, cb), fatherPolyId,
+      center: [cx, cy, cz], positions: pos, colors: col });
   }
 
-  const areaCount = view.getUint32(off, true); off += 4;
+  const areaCount = v.getUint32(off, true); off += 4;
   const areas: PreprocessedArea[] = [];
-
   for (let i = 0; i < areaCount; i++) {
-    const id = view.getUint32(off, true); off += 4;
-    const labelLen = view.getUint32(off, true); off += 4;
-    const rl = Math.ceil(labelLen / 4) * 4;
-    const roomLabel = new TextDecoder().decode(new Uint8Array(buf, off, labelLen));
-    off += rl;
-
-    const boxMin: [number, number, number] = [
-      view.getFloat32(off, true), view.getFloat32(off + 4, true), view.getFloat32(off + 8, true),
-    ]; off += 12;
-    const boxMax: [number, number, number] = [
-      view.getFloat32(off, true), view.getFloat32(off + 4, true), view.getFloat32(off + 8, true),
-    ]; off += 12;
-    const center: [number, number, number] = [
-      view.getFloat32(off, true), view.getFloat32(off + 4, true), view.getFloat32(off + 8, true),
-    ]; off += 12;
-    const cr = view.getFloat32(off, true); off += 4;
-    const cg = view.getFloat32(off, true); off += 4;
-    const cb = view.getFloat32(off, true); off += 4;
-
-    const neighborCount = view.getUint32(off, true); off += 4;
-    const neighborIds: number[] = [];
-    for (let j = 0; j < neighborCount; j++) {
-      neighborIds.push(view.getUint32(off, true)); off += 4;
-    }
-
-    areas.push({
-      id, roomLabel,
-      colorHex: rgbHex(cr, cg, cb),
-      boxMin, boxMax, center, neighborIds,
-    });
+    const id = v.getUint32(off, true); off += 4;
+    const ll = v.getUint32(off, true); off += 4;
+    const lp = Math.ceil(ll / 4) * 4;
+    const rl = new TextDecoder().decode(new Uint8Array(buf, off, ll)); off += lp;
+    const bmn: [number,number,number] = [v.getFloat32(off,true),v.getFloat32(off+4,true),v.getFloat32(off+8,true)]; off += 12;
+    const bmx: [number,number,number] = [v.getFloat32(off,true),v.getFloat32(off+4,true),v.getFloat32(off+8,true)]; off += 12;
+    const ctr: [number,number,number] = [v.getFloat32(off,true),v.getFloat32(off+4,true),v.getFloat32(off+8,true)]; off += 12;
+    const cr = v.getFloat32(off, true); off += 4;
+    const cg = v.getFloat32(off, true); off += 4;
+    const cb = v.getFloat32(off, true); off += 4;
+    const nc = v.getUint32(off, true); off += 4;
+    const nids: number[] = [];
+    for (let j = 0; j < nc; j++) { nids.push(v.getUint32(off, true)); off += 4; }
+    const pc = v.getUint32(off, true); off += 4;
+    const pids: number[] = [];
+    for (let j = 0; j < pc; j++) { pids.push(v.getUint32(off, true)); off += 4; }
+    areas.push({ id, roomLabel: rl, colorHex: hex(cr, cg, cb), boxMin: bmn, boxMax: bmx, center: ctr, neighborIds: nids, polyIds: pids });
   }
 
-  return { objects, areas };
+  const polyCount = v.getUint32(off, true); off += 4;
+  const polys: PreprocessedPoly[] = [];
+  for (let i = 0; i < polyCount; i++) {
+    const id = v.getUint32(off, true); off += 4;
+    const areaId = v.getUint32(off, true); off += 4;
+    const px = v.getFloat32(off, true); off += 4;
+    const py = v.getFloat32(off, true); off += 4;
+    const pz = v.getFloat32(off, true); off += 4;
+    const cr = v.getFloat32(off, true); off += 4;
+    const cg = v.getFloat32(off, true); off += 4;
+    const cb = v.getFloat32(off, true); off += 4;
+    const V = v.getUint32(off, true); off += 4;
+    const positions = V > 0 ? new Float32Array(buf, off, V * 3) : new Float32Array(0);
+    off += V * 12;
+    const E = v.getUint32(off, true); off += 4;
+    const edgeIndices = E > 0 ? new Uint32Array(buf, off, E * 2) : new Uint32Array(0);
+    off += E * 8;
+    const Ac = v.getUint32(off, true); off += 4;
+    const adjacentPolyIds: number[] = [];
+    for (let j = 0; j < Ac; j++) { adjacentPolyIds.push(v.getUint32(off, true)); off += 4; }
+    const Gc = v.getUint32(off, true); off += 4;
+    const gatewayNodeIds: number[] = [];
+    for (let j = 0; j < Gc; j++) { gatewayNodeIds.push(v.getUint32(off, true)); off += 4; }
+    polys.push({ id, areaId, colorHex: hex(cr, cg, cb), center: [px, py, pz], positions, edgeIndices, adjacentPolyIds, gatewayNodeIds });
+  }
+
+  const topoEdgeCount = v.getUint32(off, true); off += 4;
+  const topoEdges: TopologicalEdge[] = [];
+  for (let i = 0; i < topoEdgeCount; i++) {
+    const srcId = v.getUint32(off, true); off += 4;
+    const dstId = v.getUint32(off, true); off += 4;
+    const length = v.getFloat32(off, true); off += 4;
+    const sp: [number,number,number] = [v.getFloat32(off,true),v.getFloat32(off+4,true),v.getFloat32(off+8,true)]; off += 12;
+    const dp: [number,number,number] = [v.getFloat32(off,true),v.getFloat32(off+4,true),v.getFloat32(off+8,true)]; off += 12;
+    const sc: [number,number,number] = [v.getFloat32(off,true),v.getFloat32(off+4,true),v.getFloat32(off+8,true)]; off += 12;
+    const dc: [number,number,number] = [v.getFloat32(off,true),v.getFloat32(off+4,true),v.getFloat32(off+8,true)]; off += 12;
+    const crossArea = v.getUint8(off) === 1; off += 1;
+    topoEdges.push({ srcId, dstId, length, srcPos: sp, dstPos: dp,
+      srcColorHex: hex(sc[0], sc[1], sc[2]), dstColorHex: hex(dc[0], dc[1], dc[2]), crossArea });
+  }
+
+  const topoNodes: TopologicalNode[] = polys.map(p => ({
+    id: p.id, areaId: p.areaId, position: p.center, colorHex: p.colorHex,
+  }));
+
+  return { objects, areas, polys, topoNodes, topoEdges };
 }
 
-function rgbHex(r: number, g: number, b: number): string {
-  const toHex = (v: number) => ((v * 255) | 0).toString(16).padStart(2, "0");
-  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+function hex(r: number, g: number, b: number): string {
+  const t = (x: number) => ((x * 255) | 0).toString(16).padStart(2, "0");
+  return `#${t(r)}${t(g)}${t(b)}`;
 }
