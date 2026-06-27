@@ -5,9 +5,12 @@ interface Props {
   mutationCount: number;
   dirty: boolean;
   exporting: boolean;
+  showDiff: boolean;
   onToggleEdit: () => void;
   onReset: () => void;
   onExport: () => void;
+  onShowDiff?: () => void;
+  onHideDiff?: () => void;
 }
 
 export function EditToolbar({
@@ -15,9 +18,12 @@ export function EditToolbar({
   mutationCount,
   dirty,
   exporting,
+  showDiff,
   onToggleEdit,
   onReset,
   onExport,
+  onShowDiff,
+  onHideDiff,
 }: Props) {
   const editing = editMode === "edit";
 
@@ -46,6 +52,15 @@ export function EditToolbar({
       >
         {editing ? "Editing" : "Edit"}
       </button>
+
+      {!editing && !showDiff && onShowDiff && (
+        <>
+          <span style={{ color: "#888" }}>|</span>
+          <button onClick={onShowDiff} style={btnStyle}>
+            Diff
+          </button>
+        </>
+      )}
 
       {editing && (
         <>
@@ -76,6 +91,15 @@ export function EditToolbar({
               {mutationCount} changes
             </span>
           )}
+        </>
+      )}
+
+      {showDiff && onHideDiff && (
+        <>
+          <span style={{ color: "#888" }}>|</span>
+          <button onClick={onHideDiff} style={btnActiveStyle}>
+            Diff
+          </button>
         </>
       )}
 

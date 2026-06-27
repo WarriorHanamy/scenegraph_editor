@@ -1,17 +1,17 @@
 /**
- * Vite plugin that adds /api/export endpoint.
+ * Vite plugin that adds /api/export and /api/scene-graph endpoints.
  *
- * Accepts mutation list from the web editor, loads the pristine
- * scene_graph.json from scene_graph_saved/, applies mutations,
- * writes the result to scene_graph_exported/, copies PCD assets,
- * and triggers preprocess to regenerate scene.bin.
+ * /api/export —— Applies mutations from the web editor, writes result
+ *                to scene_graph_exported/<snapshot>/scene_graph.json.
+ * /api/scene-graph —— Serves scene_graph.json (from exported/ if
+ *                     available, otherwise from saved/).
+ * /api/snapshot —— Returns the latest snapshot name.
  */
 import type { Plugin, ViteDevServer } from "vite";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { readdir, copyFile, mkdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
-import { spawnSync } from "node:child_process";
 
 // ---- types (mirror frontend/src/lib/types.ts) ----
 
@@ -351,24 +351,16 @@ function rebuildCounters(root: any): void {
   root.saved_at = new Date().toISOString().replace("T", " ").slice(0, 19);
 }
 
-// ---- PCD file copy ----
+// ---- file copy (mirror objects/ from saved to exported) ----
 
-async function copyPCDs(
-  savedDir: string,
-  exportedDir: string,
-): Promise<void> {
-  const objectsDir = join(exportedDir, "objects");
-  await mkdir(objectsDir, { recursive: true });
-
-  const savedObjectsDir = join(savedDir, "objects");
+async function copyObjectsDir(savedDir: string, exportedDir: string): Promise<void> {
+  const src = join(savedDir, "objects");
+  const dst = join(exportedDir, "objects");
   try {
-    const entries = await readdir(savedObjectsDir);
-    for (const entry of entries) {
-      if (!entry.endsWith(".pcd")) continue;
-      await copyFile(
-        join(savedObjectsDir, entry),
-        join(objectsDir, entry),
-      );
+    const entries = await readdir(src);
+    await mkdir(dst, { recursive: true });
+    for (const f of entries) {
+      await copyFile(join(src, f), join(dst, f));
     }
   } catch {
     // no objects dir — ok
@@ -474,26 +466,7 @@ export function apiPlugin(): Plugin {
             };
             writeJson(join(exportedDir, "manifest.json"), manifest);
 
-            await copyPCDs(savedDir, exportedDir);
-
-            // run preprocess --from exported
-            const result = spawnSync(
-              "bun",
-              ["run", "tools/preprocess.ts", "--from", "exported"],
-              {
-                cwd: PROJECT_ROOT,
-                encoding: "utf-8",
-                timeout: 30000,
-              },
-            );
-
-            if (result.status !== 0) {
-              sendJson(res, 500, {
-                success: false,
-                error: `Preprocess failed: ${result.stderr || result.stdout}`,
-              });
-              return;
-            }
+            await copyObjectsDir(savedDir, exportedDir);
 
             sendJson(res, 200, { success: true });
           } catch (err: any) {
@@ -509,6 +482,83 @@ export function apiPlugin(): Plugin {
             const savedDir = join(PROJECT_ROOT, "scene_graph_saved");
             const name = findLatestSnapshot(savedDir);
             sendJson(res, 200, { snapshot: name });
+          } catch (err: any) {
+            sendJson(res, 500, { success: false, error: err.message });
+          }
+        },
+      );
+
+      // List all available snapshots from scene_graph_saved/
+      server.middlewares.use(
+        "/api/snapshots",
+        async (_req: IncomingMessage, res: ServerResponse) => {
+          try {
+            const savedDir = join(PROJECT_ROOT, "scene_graph_saved");
+            const entries = readdirSync(savedDir, { withFileTypes: true })
+              .filter((e) => e.isDirectory())
+              .filter((e) => {
+                try { return statSync(join(savedDir, e.name, "scene_graph.json")).isFile(); }
+                catch { return false; }
+              });
+
+            const snapshots = entries.map((e) => {
+              const mpath = join(savedDir, e.name, "manifest.json");
+              let meta: any = {};
+              try { meta = readJson(mpath); } catch {}
+              return {
+                name: e.name,
+                saved_at: meta.saved_at || "",
+                summary: meta.summary || {},
+              };
+            });
+            snapshots.sort((a, b) => b.saved_at.localeCompare(a.saved_at));
+            sendJson(res, 200, { snapshots });
+          } catch (err: any) {
+            sendJson(res, 500, { success: false, error: err.message });
+          }
+        },
+      );
+
+      // Serve scene_graph.json
+      //   ?snapshot=X           → exported/ first, fallback saved/
+      //   ?snapshot=X&source=saved    → force saved/
+      //   ?snapshot=X&source=exported → force exported/ (404 if missing)
+      server.middlewares.use(
+        "/api/scene-graph",
+        async (req: IncomingMessage, res: ServerResponse) => {
+          if (req.method !== "GET") {
+            sendJson(res, 405, { success: false, error: "Method not allowed" });
+            return;
+          }
+          try {
+            const url = new URL(req.url || "", `http://${req.headers.host || "localhost"}`);
+            const snapshot = url.searchParams.get("snapshot");
+            if (!snapshot) {
+              sendJson(res, 400, { success: false, error: "Missing snapshot query param" });
+              return;
+            }
+
+            const savedPath = join(PROJECT_ROOT, "scene_graph_saved", snapshot, "scene_graph.json");
+            const exportedPath = join(PROJECT_ROOT, "scene_graph_exported", snapshot, "scene_graph.json");
+            const source = url.searchParams.get("source") || "auto";
+
+            let jsonPath: string;
+            if (source === "saved") {
+              jsonPath = savedPath;
+            } else if (source === "exported") {
+              if (!statSync(exportedPath).isFile()) {
+                sendJson(res, 404, { success: false, error: "No export found" });
+                return;
+              }
+              jsonPath = exportedPath;
+            } else {
+              try { statSync(exportedPath); jsonPath = exportedPath; }
+              catch { jsonPath = savedPath; }
+            }
+
+            const data = readFileSync(jsonPath, "utf-8");
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(data);
           } catch (err: any) {
             sendJson(res, 500, { success: false, error: err.message });
           }

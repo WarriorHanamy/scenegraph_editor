@@ -6,23 +6,11 @@
  *         │    ├── internal wireframe (vertex→vertex edgeIndices)
  *         │    ├── adjacentPolyIds   (edges[].dst_poly_id — intra-area path planning)
  *         │    ├── gatewayNodeIds    (connected_node_ids — cross-area gateways)
- *         │    └── Contains Objects (fatherPolyId)
  *         └── neighbor_area_ids (Area→Area)
  *
  *  TopologicalNode  — poly center, top-level renderable, CRUD target
  *  TopologicalEdge  — Poly↔Poly adjacency (from edges[] + connected_node_ids[])
  */
-
-export interface PreprocessedObject {
-  id: number;
-  label: string;
-  pointCount: number;
-  colorHex: string;
-  positions: Float32Array;
-  colors: Float32Array;
-  fatherPolyId: number;
-  center: [number, number, number];
-}
 
 export interface PreprocessedArea {
   id: number;
@@ -71,7 +59,6 @@ export interface TopologicalEdge {
 }
 
 export interface SceneData {
-  objects: PreprocessedObject[];
   areas: PreprocessedArea[];
   polys: PreprocessedPoly[];
   topoNodes: TopologicalNode[];

@@ -3,7 +3,6 @@ import type { RefObject } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls, PerspectiveCamera } from "@react-three/drei";
 import * as THREE from "three";
-import { PointCloudObject } from "./components/PointCloudObject";
 import { AreaBox } from "./components/AreaBoxes";
 import { AreaEdges } from "./components/AreaEdges";
 import { AreaCenters } from "./components/AreaCenters";
@@ -11,10 +10,10 @@ import { PolyhedraAll } from "./components/PolyhedraAll";
 import { PolyMesh } from "./components/PolyMesh";
 import { TopologicalNodes } from "./components/TopologicalNodes";
 import { TopologicalEdges } from "./components/TopologicalEdges";
-import { ObjectPolyEdges } from "./components/ObjectPolyEdges";
 import { WorldAxes } from "./components/WorldAxes";
 import { EditToolbar } from "./components/EditToolbar";
-import { loadSceneBin } from "./lib/scene-loader";
+import { ExportDiffPanel } from "./components/ExportDiffPanel";
+import { loadSceneGraph } from "./lib/scene-loader";
 import { pickTarget } from "./lib/picking";
 import type { PickTarget } from "./lib/picking";
 import {
@@ -49,7 +48,6 @@ import type {
 // ---- layers ----
 
 interface Layers {
-  objects: boolean;
   areas: boolean;
   areaEdges: boolean;
   areaCenters: boolean;
@@ -58,13 +56,11 @@ interface Layers {
   polyMesh: boolean;
   topoNodes: boolean;
   topoEdges: boolean;
-  objPolyEdges: boolean;
 }
 
 type LayerKey = keyof Layers;
 
 const EDIT_ONLY_LAYERS: Layers = {
-  objects: false,
   areas: false,
   areaEdges: false,
   areaCenters: false,
@@ -73,7 +69,6 @@ const EDIT_ONLY_LAYERS: Layers = {
   polyMesh: false,
   topoNodes: true,
   topoEdges: true,
-  objPolyEdges: false,
 };
 
 interface ConnectionNotice {
@@ -332,14 +327,6 @@ function Scene({
     });
   }, []);
 
-  const objects = useMemo(
-    () =>
-      data.objects.map((obj) => (
-        <PointCloudObject key={obj.id} obj={obj} visible={layers.objects} />
-      )),
-    [data, layers.objects],
-  );
-
   const areaBoxes = useMemo(
     () =>
       data.areas.map((a) => (
@@ -361,7 +348,6 @@ function Scene({
 
       <group ref={sceneGroupRef} rotation={[-Math.PI / 2, 0, 0]}>
         <WorldAxes />
-        {objects}
         {areaBoxes}
         {layers.areaEdges && <AreaEdges areas={data.areas} visible />}
         {layers.areaCenters && (
@@ -402,10 +388,6 @@ function Scene({
             hoveredNodeId={hoverTarget?.kind === "node" ? hoverTarget.id : null}
           />
         )}
-        {layers.objPolyEdges && (
-          <ObjectPolyEdges data={data} effectivePolys={effectivePolys} visible />
-        )}
-
         {/* Click handler: processes node/edge selection. */}
         <ClickHandler
           nodes={layers.topoNodes ? tNodes : []}
@@ -435,10 +417,10 @@ function Scene({
 export function App() {
   const [data, setData] = useState<SceneData | null>(null);
   const [snapshot, setSnapshot] = useState<string>("");
+  const [snapshots, setSnapshots] = useState<{ name: string; saved_at: string; summary: any }[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [layers, setLayers] = useState<Layers>({
-    objects: false,
     areas: true,
     areaEdges: false,
     areaCenters: false,
@@ -447,7 +429,6 @@ export function App() {
     polyMesh: true,
     topoNodes: true,
     topoEdges: true,
-    objPolyEdges: false,
   });
   const [selectedArea, setSelectedArea] = useState<number | null>(null);
   const [meshOpacity, setMeshOpacity] = useState(0.1);
@@ -461,6 +442,7 @@ export function App() {
   const [editHistory, setEditHistory] = useState(() =>
     createHistory(emptyMutations()),
   );
+  const [showDiff, setShowDiff] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [connectionNotice, setConnectionNotice] =
     useState<ConnectionNotice | null>(null);
@@ -478,17 +460,43 @@ export function App() {
     [],
   );
 
+  // Phase 1: list all snapshots
   useEffect(() => {
-    loadSceneBin("/data/scene.bin")
-      .then(setData)
-      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setLoading(false));
-
-    fetch("/data/manifest.json")
-      .then((r) => r.json())
-      .then((m) => setSnapshot(m.snapshot || ""))
-      .catch(() => {});
+    (async () => {
+      try {
+        const resp = await fetch("/api/snapshots");
+        const json = await resp.json();
+        const list = json.snapshots || [];
+        setSnapshots(list);
+        if (list.length > 0) {
+          setSnapshot(list[0].name); // triggers Phase 2
+        } else {
+          setError("No snapshots found");
+          setLoading(false);
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+        setLoading(false);
+      }
+    })();
   }, []);
+
+  // Phase 2: load scene graph for selected snapshot
+  useEffect(() => {
+    if (!snapshot) return;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const sceneData = await loadSceneGraph(`/api/scene-graph?snapshot=${snapshot}`);
+        setData(sceneData);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [snapshot]);
 
   // ---- node selection ----
 
@@ -693,6 +701,18 @@ export function App() {
     setSelectedEdgeKey(null);
   }, []);
 
+  // ---- snapshot switching ----
+
+  const handleSwitchSnapshot = useCallback((name: string) => {
+    if (name === snapshot || !name) return;
+    setSnapshot(name);
+    setData(null);
+    setEditHistory(createHistory(emptyMutations()));
+    setSelectedNodeIds(new Set());
+    setSelectedEdgeKey(null);
+    setError(null);
+  }, [snapshot]);
+
   // ---- export ----
 
   const handleExport = useCallback(async () => {
@@ -710,7 +730,7 @@ export function App() {
         return;
       }
       // Reload data
-      const newData = await loadSceneBin("/data/scene.bin");
+      const newData = await loadSceneGraph(`/api/scene-graph?snapshot=${snapshot}`);
       setData(newData);
       setEditHistory(createHistory(emptyMutations()));
       setSelectedNodeIds(new Set());
@@ -765,9 +785,12 @@ export function App() {
         mutationCount={mutationCount(mutations)}
         dirty={dirty}
         exporting={exporting}
+        showDiff={showDiff}
         onToggleEdit={handleToggleEdit}
         onReset={handleReset}
         onExport={handleExport}
+        onShowDiff={() => setShowDiff(true)}
+        onHideDiff={() => setShowDiff(false)}
       />
 
       {connectionNotice && (
@@ -795,6 +818,60 @@ export function App() {
           }}
         >
           {connectionNotice.message}
+        </div>
+      )}
+
+      {/* Snapshot selector */}
+      {snapshots.length > 0 && snapshot !== "" && (
+        <div
+          data-overlay
+          style={{
+            position: "absolute",
+            top: 44,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 15,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            background: data ? "rgba(0,0,0,0.82)" : "rgba(0,0,0,0.92)",
+            borderRadius: 6,
+            padding: "4px 10px",
+            color: "#ccc",
+            fontFamily: "monospace",
+            fontSize: 12,
+          }}
+        >
+          <span>Snapshot:</span>
+          <select
+            value={snapshot || ""}
+            onChange={(e) => handleSwitchSnapshot(e.target.value)}
+            style={{
+              background: "#222",
+              color: "#ddd",
+              border: "1px solid #555",
+              borderRadius: 4,
+              padding: "2px 6px",
+              fontFamily: "monospace",
+              fontSize: 12,
+              maxWidth: 280,
+            }}
+          >
+            {snapshots.map((s) => (
+              <option key={s.name} value={s.name}>
+                {s.name}
+                {s.summary?.poly_count != null
+                  ? `  · ${s.summary.poly_count}p`
+                  : ""}
+              </option>
+            ))}
+          </select>
+          {data && (
+            <span style={{ color: "#666", fontSize: 10 }}>
+              {data.polys.length}p / {data.areas.length}a /{" "}
+              {data.topoEdges.length}e
+            </span>
+          )}
         </div>
       )}
 
@@ -857,12 +934,6 @@ export function App() {
               Layers
             </div>
 
-            <Toggle
-              label="Object Clouds"
-              k="objects"
-              layers={layers}
-              toggle={toggle}
-            />
             <Toggle
               label="Area Boxes"
               k="areas"
@@ -943,13 +1014,6 @@ export function App() {
               toggle={toggle}
             />
 
-            <div style={{ margin: "6px 0 4px", borderTop: "1px solid #333" }} />
-            <Toggle
-              label="Obj→Poly Edges"
-              k="objPolyEdges"
-              layers={layers}
-              toggle={toggle}
-            />
             </div>
           )}
 
@@ -1021,65 +1085,6 @@ export function App() {
             ))}
           </div>
 
-          {/* Objects */}
-          <div
-            data-overlay
-            style={{
-              position: "absolute",
-              top: 54,
-              left: 16,
-              zIndex: 10,
-              background: "rgba(0,0,0,0.75)",
-              borderRadius: 8,
-              padding: "10px 14px",
-              color: "#ccc",
-              fontFamily: "monospace",
-              fontSize: 12,
-              minWidth: 160,
-            }}
-          >
-            <div
-              style={{
-                color: "#fff",
-                fontWeight: 600,
-                marginBottom: 6,
-                fontSize: 13,
-              }}
-            >
-              Objects ({data.objects.length})
-            </div>
-            {data.objects.map((obj) => (
-              <div
-                key={obj.id}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  padding: "2px 0",
-                }}
-              >
-                <span
-                  style={{
-                    width: 10,
-                    height: 10,
-                    borderRadius: 2,
-                    flexShrink: 0,
-                    backgroundColor: obj.colorHex,
-                    border: "1px solid rgba(255,255,255,0.15)",
-                  }}
-                />
-                <span>
-                  {obj.label} [{obj.id}]
-                </span>
-                <span
-                  style={{ color: "#666", marginLeft: "auto", fontSize: 10 }}
-                >
-                  {obj.pointCount}pts
-                </span>
-              </div>
-            ))}
-          </div>
-
           {/* Stats */}
           <div
             style={{
@@ -1133,6 +1138,11 @@ export function App() {
           Loading...
         </div>
       ) : null}
+
+      {/* Export diff panel overlay */}
+      {showDiff && snapshot && (
+        <ExportDiffPanel snapshot={snapshot} onClose={() => setShowDiff(false)} />
+      )}
     </div>
   );
 }
