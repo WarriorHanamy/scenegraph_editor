@@ -77,3 +77,41 @@ export interface SceneData {
   topoNodes: TopologicalNode[];
   topoEdges: TopologicalEdge[];
 }
+
+// ---- Mutations (sent to backend on export) ----
+
+export interface MovePoly {
+  id: number;
+  center: [number, number, number];
+}
+
+export interface EdgeRef {
+  srcId: number;
+  dstId: number;
+}
+
+export interface CreatePoly {
+  areaId: number;
+  center: [number, number, number];
+  size: number;
+}
+
+export interface Mutations {
+  deletePolyIds: number[];
+  movePoly: MovePoly[];
+  removeEdges: EdgeRef[];
+  addEdges: EdgeRef[];
+  createPoly: CreatePoly[];
+}
+
+export interface ExportRequest {
+  snapshot: string;
+  mutations: Mutations;
+}
+
+export interface ExportResponse {
+  success: boolean;
+  error?: string;
+}
+
+export type EditMode = "view" | "edit";

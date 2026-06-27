@@ -1,18 +1,33 @@
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
+import { TransformControls } from "@react-three/drei";
 import type { TopologicalNode } from "../lib/types";
 
 interface Props {
   nodes: TopologicalNode[];
   visible: boolean;
   selectedArea: number | null;
-  selectedNodeId: number | null;
-  onSelectNode: (id: number | null) => void;
+  selectedNodeIds: Set<number>;
+  editMode: boolean;
+  moveNodeId: number | null;
+  onNodeMoved: (id: number, pos: [number, number, number]) => void;
 }
 
-const EMPTY = new Float32Array(0);
+/**
+ * Topological nodes rendered as batch points.
+ * Selected nodes get highlight spheres; one node can be moved via TransformControls.
+ * Click handling is done by the parent ClickHandler component.
+ */
+export function TopologicalNodes({
+  nodes,
+  visible,
+  selectedArea,
+  selectedNodeIds,
+  editMode,
+  moveNodeId,
+  onNodeMoved,
+}: Props) {
+  const tcRef = useRef<any>(null!);
 
-/** Poly center spheres — first-class renderable graph nodes. */
-export function TopologicalNodes({ nodes, visible, selectedArea, selectedNodeId, onSelectNode }: Props) {
   const groups = useMemo(() => {
     const byArea = new Map<number, TopologicalNode[]>();
     for (const n of nodes) {
@@ -20,7 +35,6 @@ export function TopologicalNodes({ nodes, visible, selectedArea, selectedNodeId,
       if (!byArea.has(key)) byArea.set(key, []);
       byArea.get(key)!.push(n);
     }
-
     return [...byArea.entries()].map(([areaId, ns]) => {
       const pos = new Float32Array(ns.length * 3);
       for (let i = 0; i < ns.length; i++) {
@@ -33,10 +47,21 @@ export function TopologicalNodes({ nodes, visible, selectedArea, selectedNodeId,
     });
   }, [nodes, selectedArea]);
 
+  const selectedNodes = useMemo(
+    () => nodes.filter((n) => selectedNodeIds.has(n.id)),
+    [nodes, selectedNodeIds],
+  );
+
+  const moveNode = useMemo(
+    () => (moveNodeId !== null ? nodes.find((n) => n.id === moveNodeId) : null),
+    [nodes, moveNodeId],
+  );
+
   if (!visible) return null;
 
   return (
     <>
+      {/* Batch points */}
       {groups.map(({ areaId, positions, color, dimmed }) => (
         <points key={areaId}>
           <bufferGeometry>
@@ -52,13 +77,29 @@ export function TopologicalNodes({ nodes, visible, selectedArea, selectedNodeId,
           />
         </points>
       ))}
-      {/* Clickable individual spheres for selected highlight */}
-      {nodes.filter((n) => n.id === selectedNodeId).map((n) => (
+
+      {/* Selected node highlights */}
+      {selectedNodes.map((n) => (
         <mesh key={`sel-${n.id}`} position={n.position}>
-          <sphereGeometry args={[0.18, 12, 8]} />
-          <meshBasicMaterial color="#ffaa00" transparent opacity={0.9} />
+          <sphereGeometry args={[0.2, 16, 10]} />
+          <meshBasicMaterial color="#ffaa00" transparent opacity={0.9} depthTest />
         </mesh>
       ))}
+
+      {/* Move gizmo with TransformControls */}
+      {editMode && moveNode && (
+        <TransformControls
+          ref={tcRef}
+          mode="translate"
+          position={[moveNode.position[0], moveNode.position[1], moveNode.position[2]]}
+          onObjectChange={() => {
+            if (tcRef.current) {
+              const p = tcRef.current.position;
+              onNodeMoved(moveNode.id, [p.x, p.y, p.z]);
+            }
+          }}
+        />
+      )}
     </>
   );
 }

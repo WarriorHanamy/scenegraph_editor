@@ -23,8 +23,17 @@
 import { readFileSync, writeFileSync, readdirSync, statSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
-const SAVED_DIR = join(import.meta.dirname, "..", "scene_graph_saved");
 const OUT_DIR  = join(import.meta.dirname, "..", "frontend", "public", "data");
+
+function resolveSourceDir(): string {
+  const fromIdx = process.argv.indexOf("--from");
+  if (fromIdx >= 0 && fromIdx + 1 < process.argv.length) {
+    const mode = process.argv[fromIdx + 1];
+    return join(import.meta.dirname, "..", `scene_graph_${mode}`);
+  }
+  return join(import.meta.dirname, "..", "scene_graph_saved");
+}
+const SAVED_DIR = resolveSourceDir();
 
 type V3 = [number, number, number];
 

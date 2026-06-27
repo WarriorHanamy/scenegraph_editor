@@ -5,30 +5,21 @@ interface Props {
   edges: TopologicalEdge[];
   visible: boolean;
   selectedArea: number | null;
+  selectedEdgeKey: string | null;
 }
-
-const EMPTY = new Float32Array(0);
 
 /**
  * Inter-node adjacency lines with vertexColors.
- * Cross-area edges get gradient colors from src area → dst area.
- * Same-area edges are solid color (both ends same).
+ * Click handling is done by the parent ClickHandler component.
+ * Selected edge is highlighted in red.
  */
-export function TopologicalEdges({ edges, visible, selectedArea }: Props) {
+export function TopologicalEdges({ edges, visible, selectedArea, selectedEdgeKey }: Props) {
   const lines = useMemo(() => {
-    const filtered = selectedArea === null
-      ? edges
-      : edges.filter((e) => {
-          return e.srcColorHex === e.dstColorHex
-            ? true // same-area — show all
-            : true; // cross-area — still show (could filter by selectedArea if desired)
-        });
+    const pos = new Float32Array(edges.length * 2 * 3);
+    const col = new Float32Array(edges.length * 2 * 3);
 
-    const pos = new Float32Array(filtered.length * 2 * 3);
-    const col = new Float32Array(filtered.length * 2 * 3);
-
-    for (let i = 0; i < filtered.length; i++) {
-      const e = filtered[i];
+    for (let i = 0; i < edges.length; i++) {
+      const e = edges[i];
       const bo = i * 6;
       pos[bo] = e.srcPos[0]; pos[bo + 1] = e.srcPos[1]; pos[bo + 2] = e.srcPos[2];
       pos[bo + 3] = e.dstPos[0]; pos[bo + 4] = e.dstPos[1]; pos[bo + 5] = e.dstPos[2];
@@ -38,19 +29,45 @@ export function TopologicalEdges({ edges, visible, selectedArea }: Props) {
       col[bo] = sR; col[bo + 1] = sG; col[bo + 2] = sB;
       col[bo + 3] = dR; col[bo + 4] = dG; col[bo + 5] = dB;
     }
-    return { positions: pos, colors: col, count: filtered.length * 2 };
-  }, [edges, selectedArea]);
+    return { positions: pos, colors: col, count: edges.length * 2 };
+  }, [edges]);
+
+  const highlightedLine = useMemo(() => {
+    if (!selectedEdgeKey) return null;
+    const [a, b] = selectedEdgeKey.split("_").map(Number);
+    const e = edges.find(
+      (x) => (x.srcId === a && x.dstId === b) || (x.srcId === b && x.dstId === a),
+    );
+    if (!e) return null;
+
+    const pos = new Float32Array([
+      e.srcPos[0], e.srcPos[1], e.srcPos[2],
+      e.dstPos[0], e.dstPos[1], e.dstPos[2],
+    ]);
+    return { positions: pos, count: 2 };
+  }, [selectedEdgeKey, edges]);
 
   if (!visible || lines.count === 0) return null;
 
   return (
-    <lineSegments>
-      <bufferGeometry>
-        <bufferAttribute attach="attributes-position" args={[lines.positions, 3] as [Float32Array, number]} count={lines.count} />
-        <bufferAttribute attach="attributes-color" args={[lines.colors, 3] as [Float32Array, number]} count={lines.count} />
-      </bufferGeometry>
-      <lineBasicMaterial vertexColors transparent opacity={selectedArea !== null ? 0.25 : 0.45} linewidth={1} />
-    </lineSegments>
+    <>
+      <lineSegments>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" args={[lines.positions, 3] as [Float32Array, number]} count={lines.count} />
+          <bufferAttribute attach="attributes-color" args={[lines.colors, 3] as [Float32Array, number]} count={lines.count} />
+        </bufferGeometry>
+        <lineBasicMaterial vertexColors transparent opacity={selectedArea !== null ? 0.25 : 0.45} linewidth={1} depthTest />
+      </lineSegments>
+
+      {highlightedLine && (
+        <lineSegments>
+          <bufferGeometry>
+            <bufferAttribute attach="attributes-position" args={[highlightedLine.positions, 3] as [Float32Array, number]} count={highlightedLine.count} />
+          </bufferGeometry>
+          <lineBasicMaterial color="#ff3333" linewidth={2} transparent opacity={0.95} depthTest />
+        </lineSegments>
+      )}
+    </>
   );
 }
 

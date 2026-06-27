@@ -1,5 +1,6 @@
 # Scene graph data
-scene*saved
+scene_graph_saved/
+scene_graph_exported/
 
 # Node / Bun
 node_modules/

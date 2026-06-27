@@ -1,10 +1,11 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { resolve } from "path";
+import { apiPlugin } from "./backend/api-plugin";
 
 export default defineConfig({
   root: "frontend",
-  plugins: [react()],
+  plugins: [react(), apiPlugin()],
   build: {
     outDir: resolve(__dirname, "frontend", "dist"),
     emptyOutDir: true,
