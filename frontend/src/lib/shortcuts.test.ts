@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { isConnectShortcut } from "./shortcuts";
+import {
+  isConnectShortcut,
+  isRedoShortcut,
+  isUndoShortcut,
+} from "./shortcuts";
 
 describe("keyboard shortcuts", () => {
   test("recognizes E by key value", () => {
@@ -13,5 +17,28 @@ describe("keyboard shortcuts", () => {
 
   test("ignores other keys", () => {
     expect(isConnectShortcut({ code: "KeyG", key: "g" })).toBe(false);
+  });
+});
+
+describe("history shortcuts", () => {
+  const event = (code: string, overrides = {}) => ({
+    code,
+    ctrlKey: true,
+    metaKey: false,
+    shiftKey: false,
+    ...overrides,
+  });
+
+  test("uses Ctrl+Z for undo", () => {
+    expect(isUndoShortcut(event("KeyZ"))).toBe(true);
+  });
+
+  test("uses Ctrl+R for redo instead of browser reload", () => {
+    expect(isRedoShortcut(event("KeyR"))).toBe(true);
+  });
+
+  test("also supports standard redo alternatives", () => {
+    expect(isRedoShortcut(event("KeyY"))).toBe(true);
+    expect(isRedoShortcut(event("KeyZ", { shiftKey: true }))).toBe(true);
   });
 });

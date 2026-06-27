@@ -1,6 +1,6 @@
 # Scene Graph Editor
 
-Web-based 3D topology editor for scene graph snapshots. View, create, update, and delete topological nodes (polyhedra) and edges.
+Web-based 3D topology editor for scene graph snapshots. View/delete topological nodes and create/delete topological edges.
 
 ## Quick Start
 
@@ -62,8 +62,6 @@ Click **Edit** in the top toolbar to enter editing mode.
 
 | Operation  | Key / Action                   | Result                             |
 | ---------- | ------------------------------ | ---------------------------------- |
-| Create     | `N` then click ground plane    | New cube poly (size 0.3) in the enclosing area |
-| Move       | Select node then `G`           | Drag the TransformControls gizmo   |
 | Delete     | Select node(s) then `Delete`   | Removes poly + all connected edges |
 
 ### Edge Operations
@@ -89,9 +87,9 @@ The toolbar shows a change count when there are unsaved mutations.
 | -------- | ------------------------------------- |
 | `Delete` / `Backspace` | Delete selected node(s) or edge       |
 | `E`        | Connect two selected nodes with an edge |
-| `N`        | Enter create-node mode (click to place) |
-| `G`        | Move selected node (TransformControls) |
-| `Esc`      | Clear all selections / cancel create  |
+| `Esc`      | Clear all selections                  |
+| `Ctrl+Z`   | Undo the previous edit                 |
+| `Ctrl+R`   | Redo the previously undone edit        |
 
 ## Layers Panel
 
@@ -100,6 +98,9 @@ Toggle visibility of 3D elements in the right-side panel:
 - Polyhedra as points, wireframe, or mesh (with opacity)
 - Topo nodes, topo edges
 - Object→Poly edges
+
+Entering edit mode temporarily renders only Topo Nodes and Topo Edges. Leaving
+edit mode restores the previous view-layer configuration.
 
 ## Preprocessing
 
@@ -128,7 +129,7 @@ scenegraph_editor/
 │   │   │   └── scene-loader.ts # Binary deserializer
 │   │   └── components/
 │   │       ├── EditToolbar.tsx      # Edit/Reset/Export bar
-│   │       ├── TopologicalNodes.tsx # Node rendering + TransformControls
+│   │       ├── TopologicalNodes.tsx # Node rendering + selection highlights
 │   │       ├── TopologicalEdges.tsx # Edge rendering + selection highlight
 │   │       └── ...                 # Other visual components
 │   └── public/data/

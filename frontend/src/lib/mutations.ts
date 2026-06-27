@@ -1,4 +1,4 @@
-import type { Mutations, MovePoly, EdgeRef, CreatePoly } from "./types";
+import type { Mutations, EdgeRef } from "./types";
 
 export function emptyMutations(): Mutations {
   return {
@@ -32,18 +32,6 @@ export function addDeletePoly(m: Mutations, id: number): Mutations {
   return mp;
 }
 
-export function addMovePoly(m: Mutations, mp: MovePoly): Mutations {
-  const existing = m.movePoly.findIndex((x) => x.id === mp.id);
-  const n = shallowCopy(m);
-  if (existing >= 0) {
-    n.movePoly = [...n.movePoly];
-    n.movePoly[existing] = { ...mp };
-  } else {
-    n.movePoly = [...n.movePoly, { ...mp }];
-  }
-  return n;
-}
-
 export function addRemoveEdge(m: Mutations, e: EdgeRef): Mutations {
   const key = edgeKey(e.srcId, e.dstId);
   if (m.removeEdges.some((r) => edgeKey(r.srcId, r.dstId) === key)) return m;
@@ -57,12 +45,6 @@ export function addAddEdge(m: Mutations, e: EdgeRef): Mutations {
   if (m.addEdges.some((a) => edgeKey(a.srcId, a.dstId) === key)) return m;
   const n = shallowCopy(m);
   n.addEdges = [...n.addEdges, { ...e }];
-  return n;
-}
-
-export function addCreatePoly(m: Mutations, cp: CreatePoly): Mutations {
-  const n = shallowCopy(m);
-  n.createPoly = [...n.createPoly, { ...cp }];
   return n;
 }
 

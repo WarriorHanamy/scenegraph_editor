@@ -1,5 +1,4 @@
-import { useMemo, useRef } from "react";
-import { TransformControls } from "@react-three/drei";
+import { useMemo } from "react";
 import type { TopologicalNode } from "../lib/types";
 
 interface Props {
@@ -8,14 +7,11 @@ interface Props {
   selectedArea: number | null;
   selectedNodeIds: Set<number>;
   hoveredNodeId: number | null;
-  editMode: boolean;
-  moveNodeId: number | null;
-  onNodeMoved: (id: number, pos: [number, number, number]) => void;
 }
 
 /**
  * Topological nodes rendered as batch points.
- * Selected nodes get highlight spheres; one node can be moved via TransformControls.
+ * Selected and hovered nodes get highlight spheres.
  * Click handling is done by the parent ClickHandler component.
  */
 export function TopologicalNodes({
@@ -24,12 +20,7 @@ export function TopologicalNodes({
   selectedArea,
   selectedNodeIds,
   hoveredNodeId,
-  editMode,
-  moveNodeId,
-  onNodeMoved,
 }: Props) {
-  const tcRef = useRef<any>(null!);
-
   const groups = useMemo(() => {
     const byArea = new Map<number, TopologicalNode[]>();
     for (const n of nodes) {
@@ -60,11 +51,6 @@ export function TopologicalNodes({
         ? nodes.find((n) => n.id === hoveredNodeId) ?? null
         : null,
     [nodes, hoveredNodeId, selectedNodeIds],
-  );
-
-  const moveNode = useMemo(
-    () => (moveNodeId !== null ? nodes.find((n) => n.id === moveNodeId) : null),
-    [nodes, moveNodeId],
   );
 
   if (!visible) return null;
@@ -106,21 +92,6 @@ export function TopologicalNodes({
             depthTest={false}
           />
         </mesh>
-      )}
-
-      {/* Move gizmo with TransformControls */}
-      {editMode && moveNode && (
-        <TransformControls
-          ref={tcRef}
-          mode="translate"
-          position={[moveNode.position[0], moveNode.position[1], moveNode.position[2]]}
-          onObjectChange={() => {
-            if (tcRef.current) {
-              const p = tcRef.current.position;
-              onNodeMoved(moveNode.id, [p.x, p.y, p.z]);
-            }
-          }}
-        />
       )}
     </>
   );

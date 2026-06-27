@@ -17,16 +17,24 @@ import { EditToolbar } from "./components/EditToolbar";
 import { loadSceneBin } from "./lib/scene-loader";
 import { pickTarget } from "./lib/picking";
 import type { PickTarget } from "./lib/picking";
-import { isConnectShortcut } from "./lib/shortcuts";
+import {
+  isConnectShortcut,
+  isRedoShortcut,
+  isUndoShortcut,
+} from "./lib/shortcuts";
+import {
+  commitHistory,
+  createHistory,
+  redoHistory,
+  undoHistory,
+} from "./lib/history";
 import {
   emptyMutations,
   mutationCount,
   edgeKey,
   addDeletePoly,
-  addMovePoly,
   addRemoveEdge,
   addAddEdge,
-  addCreatePoly,
 } from "./lib/mutations";
 import type {
   SceneData,
@@ -54,22 +62,23 @@ interface Layers {
 
 type LayerKey = keyof Layers;
 
-// ---- temp poly for rendering ----
-
-interface TempPoly {
-  id: number;
-  areaId: number;
-  position: [number, number, number];
-  size: number;
-  colorHex: string;
-}
+const EDIT_ONLY_LAYERS: Layers = {
+  objects: false,
+  areas: false,
+  areaEdges: false,
+  areaCenters: false,
+  polyPoints: false,
+  polyWireframe: false,
+  polyMesh: false,
+  topoNodes: true,
+  topoEdges: true,
+  objPolyEdges: false,
+};
 
 interface ConnectionNotice {
   kind: "success" | "info" | "error";
   message: string;
 }
-
-let tempPolyIdCounter = -1;
 
 // ---- helpers ----
 
@@ -148,54 +157,28 @@ function effectiveEdges(
   return [...existing, ...added];
 }
 
-/** Find the area containing a scene-local point. */
-function findAreaForPoint(
-  areas: SceneData["areas"],
-  point: [number, number, number],
-): number {
-  for (const a of areas) {
-    if (
-      point[0] >= a.boxMin[0] &&
-      point[0] <= a.boxMax[0] &&
-      point[1] >= a.boxMin[1] &&
-      point[1] <= a.boxMax[1] &&
-      point[2] >= a.boxMin[2] &&
-      point[2] <= a.boxMax[2]
-    ) {
-      return a.id;
-    }
-  }
-  return areas[0]?.id ?? 0;
-}
-
 // ---- click handler (inside Canvas) ----
 
 function ClickHandler({
   nodes,
   edges,
   editMode,
-  createMode,
-  interactionDisabled,
   sceneGroupRef,
   onSelectNode,
   onSelectEdge,
   onDeselectAll,
-  onCreateNode,
   onHoverTarget,
 }: {
   nodes: TopologicalNode[];
   edges: TopologicalEdge[];
   editMode: boolean;
-  createMode: boolean;
-  interactionDisabled: boolean;
   sceneGroupRef: RefObject<THREE.Group | null>;
   onSelectNode: (id: number, additive: boolean) => void;
   onSelectEdge: (key: string) => void;
   onDeselectAll: () => void;
-  onCreateNode: (pos: [number, number, number]) => void;
   onHoverTarget: (target: PickTarget) => void;
 }) {
-  const { gl, camera, raycaster } = useThree();
+  const { gl, camera } = useThree();
 
   useEffect(() => {
     const canvas = gl.domElement;
@@ -205,13 +188,12 @@ function ClickHandler({
       return;
     }
 
-    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     const mouseDown = new THREE.Vector2();
     const mouseUp = new THREE.Vector2();
 
     const targetAt = (e: MouseEvent | PointerEvent): PickTarget => {
       const sceneGroup = sceneGroupRef.current;
-      if (!sceneGroup || createMode || interactionDisabled) return null;
+      if (!sceneGroup) return null;
 
       sceneGroup.updateWorldMatrix(true, false);
       camera.updateMatrixWorld();
@@ -233,14 +215,9 @@ function ClickHandler({
     };
 
     const onMove = (e: PointerEvent) => {
-      if (e.buttons !== 0 || interactionDisabled) {
+      if (e.buttons !== 0) {
         onHoverTarget(null);
         canvas.style.cursor = "";
-        return;
-      }
-      if (createMode) {
-        onHoverTarget(null);
-        canvas.style.cursor = "crosshair";
         return;
       }
 
@@ -267,8 +244,6 @@ function ClickHandler({
       )
         return;
 
-      if (interactionDisabled) return;
-
       const target = targetAt(e);
       if (target?.kind === "node") {
         e.stopPropagation();
@@ -281,26 +256,10 @@ function ClickHandler({
         return;
       }
 
-      if (!createMode) {
-        onDeselectAll();
-        return;
-      }
-
-      const rect = canvas.getBoundingClientRect();
-      const mx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      const my = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-      raycaster.setFromCamera(new THREE.Vector2(mx, my), camera);
-      const groundPt = new THREE.Vector3();
-      if (raycaster.ray.intersectPlane(groundPlane, groundPt)) {
-        const sceneGroup = sceneGroupRef.current;
-        if (!sceneGroup) return;
-        sceneGroup.updateWorldMatrix(true, false);
-        const localPoint = sceneGroup.worldToLocal(groundPt);
-        onCreateNode([localPoint.x, localPoint.y, localPoint.z]);
-      }
+      onDeselectAll();
     };
 
-    canvas.style.cursor = createMode && !interactionDisabled ? "crosshair" : "";
+    canvas.style.cursor = "";
     canvas.addEventListener("mousedown", onDown, { capture: true });
     canvas.addEventListener("pointermove", onMove, { capture: true });
     canvas.addEventListener("pointerleave", onLeave);
@@ -315,18 +274,14 @@ function ClickHandler({
     };
   }, [
     editMode,
-    createMode,
-    interactionDisabled,
     nodes,
     edges,
     gl,
     camera,
-    raycaster,
     sceneGroupRef,
     onSelectNode,
     onSelectEdge,
     onDeselectAll,
-    onCreateNode,
     onHoverTarget,
   ]);
 
@@ -344,14 +299,9 @@ function Scene({
   selectedNodeIds,
   selectedEdgeKey,
   editMode,
-  createMode,
-  moveNodeId,
-  tempPolys,
   onSelectNode,
   onSelectEdge,
   onDeselectAll,
-  onNodeMoved,
-  onCreateNode,
   meshOpacity,
 }: {
   data: SceneData;
@@ -362,14 +312,9 @@ function Scene({
   selectedNodeIds: Set<number>;
   selectedEdgeKey: string | null;
   editMode: boolean;
-  createMode: boolean;
-  moveNodeId: number | null;
-  tempPolys: TempPoly[];
   onSelectNode: (id: number, additive: boolean) => void;
   onSelectEdge: (key: string | null) => void;
   onDeselectAll: () => void;
-  onNodeMoved: (id: number, pos: [number, number, number]) => void;
-  onCreateNode: (pos: [number, number, number]) => void;
   meshOpacity: number;
 }) {
   const sceneGroupRef = useRef<THREE.Group>(null);
@@ -451,43 +396,23 @@ function Scene({
             selectedArea={selectedArea}
             selectedNodeIds={selectedNodeIds}
             hoveredNodeId={hoverTarget?.kind === "node" ? hoverTarget.id : null}
-            editMode={editMode}
-            moveNodeId={moveNodeId}
-            onNodeMoved={onNodeMoved}
           />
         )}
         {layers.objPolyEdges && (
           <ObjectPolyEdges data={data} visible />
         )}
 
-        {/* Click handler: processes clicks for node/edge selection + create */}
+        {/* Click handler: processes node/edge selection. */}
         <ClickHandler
           nodes={layers.topoNodes ? tNodes : []}
           edges={layers.topoEdges ? tEdges : []}
           editMode={editMode}
-          createMode={createMode}
-          interactionDisabled={moveNodeId !== null}
           sceneGroupRef={sceneGroupRef}
           onSelectNode={onSelectNode}
           onSelectEdge={onSelectEdge}
           onDeselectAll={onDeselectAll}
-          onCreateNode={onCreateNode}
           onHoverTarget={handleHoverTarget}
         />
-
-        {/* Rendered temp polys (cubes) */}
-        {editMode &&
-          tempPolys.map((tp) => (
-            <mesh key={`tp-${tp.id}`} position={tp.position}>
-              <boxGeometry args={[tp.size, tp.size, tp.size]} />
-              <meshBasicMaterial
-                color={tp.colorHex}
-                transparent
-                opacity={0.7}
-                depthTest
-              />
-            </mesh>
-          ))}
       </group>
 
       <gridHelper args={[80, 80, "#333", "#222"]} />
@@ -496,7 +421,6 @@ function Scene({
         dampingFactor={0.1}
         maxDistance={400}
         minDistance={1}
-        enabled={moveNodeId === null}
       />
     </Canvas>
   );
@@ -530,15 +454,25 @@ export function App() {
     new Set(),
   );
   const [selectedEdgeKey, setSelectedEdgeKey] = useState<string | null>(null);
-  const [mutations, setMutations] = useState<Mutations>(emptyMutations());
-  const [moveNodeId, setMoveNodeId] = useState<number | null>(null);
-  const [createMode, setCreateMode] = useState(false);
-  const [tempPolys, setTempPolys] = useState<TempPoly[]>([]);
+  const [editHistory, setEditHistory] = useState(() =>
+    createHistory(emptyMutations()),
+  );
   const [exporting, setExporting] = useState(false);
   const [connectionNotice, setConnectionNotice] =
     useState<ConnectionNotice | null>(null);
 
+  const mutations = editHistory.present;
+
   const dirty = mutationCount(mutations) > 0;
+
+  const commitEdit = useCallback(
+    (update: (current: Mutations) => Mutations) => {
+      setEditHistory((history) =>
+        commitHistory(history, update(history.present)),
+      );
+    },
+    [],
+  );
 
   useEffect(() => {
     loadSceneBin("/data/scene.bin")
@@ -556,7 +490,6 @@ export function App() {
 
   const handleSelectNode = useCallback(
     (id: number, additive: boolean) => {
-      if (createMode) return;
       setSelectedNodeIds((prev) => {
         const next = new Set(additive ? prev : []);
         if (next.has(id)) {
@@ -568,57 +501,20 @@ export function App() {
       });
       setSelectedEdgeKey(null);
     },
-    [createMode],
+    [],
   );
 
   // ---- edge selection ----
 
   const handleSelectEdge = useCallback((key: string | null) => {
-    if (createMode) return;
     setSelectedEdgeKey(key);
     setSelectedNodeIds(new Set());
-    setMoveNodeId(null);
-  }, [createMode]);
+  }, []);
 
   const handleDeselectAll = useCallback(() => {
-    if (createMode) return;
     setSelectedNodeIds(new Set());
     setSelectedEdgeKey(null);
-    setMoveNodeId(null);
-  }, [createMode]);
-
-  // ---- create node ----
-
-  const handleCreateNode = useCallback(
-    (pos: [number, number, number]) => {
-      if (!createMode || !data) return;
-      const areaId = findAreaForPoint(data.areas, pos);
-      const colorHex = data.areas.find((a) => a.id === areaId)?.colorHex ?? "#888";
-      const size = 0.3;
-
-      setMutations((prev) =>
-        addCreatePoly(prev, { areaId, center: pos, size }),
-      );
-
-      const tid = tempPolyIdCounter--;
-      setTempPolys((prev) => [
-        ...prev,
-        { id: tid, areaId, position: pos, size, colorHex },
-      ]);
-
-      setCreateMode(false);
-    },
-    [createMode, data],
-  );
-
-  // ---- node move ----
-
-  const handleNodeMoved = useCallback(
-    (id: number, pos: [number, number, number]) => {
-      setMutations((prev) => addMovePoly(prev, { id, center: pos }));
-    },
-    [],
-  );
+  }, []);
 
   const handleConnectSelected = useCallback(() => {
     const ids = [...selectedNodeIds];
@@ -648,20 +544,20 @@ export function App() {
         message: `Nodes ${srcId} and ${dstId} are already connected`,
       });
     } else {
-      setMutations((prev) => {
+      commitEdit((current) => {
         if (
-          prev.removeEdges.some(
+          current.removeEdges.some(
             (edge) => edgeKey(edge.srcId, edge.dstId) === key,
           )
         ) {
           return {
-            ...prev,
-            removeEdges: prev.removeEdges.filter(
+            ...current,
+            removeEdges: current.removeEdges.filter(
               (edge) => edgeKey(edge.srcId, edge.dstId) !== key,
             ),
           };
         }
-        return addAddEdge(prev, { srcId, dstId });
+        return addAddEdge(current, { srcId, dstId });
       });
       setConnectionNotice({
         kind: "success",
@@ -671,14 +567,35 @@ export function App() {
 
     setSelectedNodeIds(new Set());
     setSelectedEdgeKey(key);
-    setMoveNodeId(null);
-  }, [data, mutations, selectedNodeIds]);
+  }, [commitEdit, data, mutations, selectedNodeIds]);
 
   useEffect(() => {
     if (!connectionNotice) return;
     const timeout = window.setTimeout(() => setConnectionNotice(null), 3000);
     return () => window.clearTimeout(timeout);
   }, [connectionNotice]);
+
+  const handleUndo = useCallback(() => {
+    if (editHistory.past.length === 0) {
+      setConnectionNotice({ kind: "info", message: "Nothing to undo" });
+      return;
+    }
+    setEditHistory((history) => undoHistory(history));
+    setSelectedNodeIds(new Set());
+    setSelectedEdgeKey(null);
+    setConnectionNotice({ kind: "info", message: "Undo applied" });
+  }, [editHistory.past.length]);
+
+  const handleRedo = useCallback(() => {
+    if (editHistory.future.length === 0) {
+      setConnectionNotice({ kind: "info", message: "Nothing to redo" });
+      return;
+    }
+    setEditHistory((history) => redoHistory(history));
+    setSelectedNodeIds(new Set());
+    setSelectedEdgeKey(null);
+    setConnectionNotice({ kind: "info", message: "Redo applied" });
+  }, [editHistory.future.length]);
 
   // ---- keyboard ----
 
@@ -692,24 +609,39 @@ export function App() {
 
       if (e.key === "Escape") {
         handleDeselectAll();
-        setMoveNodeId(null);
-        setCreateMode(false);
         return;
       }
 
       if (editMode !== "edit") return;
 
+      if (isUndoShortcut(e)) {
+        e.preventDefault();
+        if (!e.repeat) handleUndo();
+        return;
+      }
+
+      if (isRedoShortcut(e)) {
+        e.preventDefault();
+        if (!e.repeat) handleRedo();
+        return;
+      }
+
       if (e.key === "Delete" || e.key === "Backspace") {
         if (selectedEdgeKey) {
           const [a, b] = selectedEdgeKey.split("_").map(Number);
-          setMutations((prev) => addRemoveEdge(prev, { srcId: a, dstId: b }));
+          commitEdit((current) =>
+            addRemoveEdge(current, { srcId: a, dstId: b }),
+          );
           setSelectedEdgeKey(null);
         } else if (selectedNodeIds.size > 0) {
-          for (const nid of selectedNodeIds) {
-            setMutations((prev) => addDeletePoly(prev, nid));
-          }
+          commitEdit((current) => {
+            let nextMutations = current;
+            for (const nid of selectedNodeIds) {
+              nextMutations = addDeletePoly(nextMutations, nid);
+            }
+            return nextMutations;
+          });
           setSelectedNodeIds(new Set());
-          setMoveNodeId(null);
         }
         return;
       }
@@ -720,22 +652,6 @@ export function App() {
         return;
       }
 
-      if (e.key === "g" || e.key === "G") {
-        if (selectedNodeIds.size === 1) {
-          const id = [...selectedNodeIds][0];
-          setMoveNodeId((prev) => (prev === id ? null : id));
-          setSelectedEdgeKey(null);
-        }
-        return;
-      }
-
-      if (e.key === "n" || e.key === "N") {
-        setCreateMode((prev) => !prev);
-        setSelectedNodeIds(new Set());
-        setSelectedEdgeKey(null);
-        setMoveNodeId(null);
-        return;
-      }
     };
 
     window.addEventListener("keydown", handler);
@@ -746,6 +662,9 @@ export function App() {
     selectedEdgeKey,
     handleDeselectAll,
     handleConnectSelected,
+    handleUndo,
+    handleRedo,
+    commitEdit,
   ]);
 
   // ---- edit mode toggle ----
@@ -756,8 +675,6 @@ export function App() {
         // Clear selections when leaving edit mode
         setSelectedNodeIds(new Set());
         setSelectedEdgeKey(null);
-        setMoveNodeId(null);
-        setCreateMode(false);
         return "view";
       }
       return "edit";
@@ -767,12 +684,9 @@ export function App() {
   // ---- reset ----
 
   const handleReset = useCallback(() => {
-    setMutations(emptyMutations());
+    setEditHistory(createHistory(emptyMutations()));
     setSelectedNodeIds(new Set());
     setSelectedEdgeKey(null);
-    setMoveNodeId(null);
-    setCreateMode(false);
-    setTempPolys([]);
   }, []);
 
   // ---- export ----
@@ -794,12 +708,9 @@ export function App() {
       // Reload data
       const newData = await loadSceneBin("/data/scene.bin");
       setData(newData);
-      setMutations(emptyMutations());
+      setEditHistory(createHistory(emptyMutations()));
       setSelectedNodeIds(new Set());
       setSelectedEdgeKey(null);
-      setMoveNodeId(null);
-      setCreateMode(false);
-      setTempPolys([]);
       setError(null);
     } catch (e: any) {
       setError(`Export error: ${e.message}`);
@@ -828,6 +739,7 @@ export function App() {
         : [],
     [data, mutations, effectiveTNodes],
   );
+  const renderedLayers = editMode === "edit" ? EDIT_ONLY_LAYERS : layers;
 
   return (
     <div style={{ width: "100%", height: "100%", position: "relative" }}>
@@ -902,9 +814,10 @@ export function App() {
       {data && (
         <>
           {/* Layer toggles */}
-          <div
-            data-overlay
-            style={{
+          {editMode !== "edit" && (
+            <div
+              data-overlay
+              style={{
               position: "absolute",
               top: 54,
               right: 16,
@@ -917,8 +830,8 @@ export function App() {
               fontSize: 12,
               minWidth: 200,
               userSelect: "none",
-            }}
-          >
+              }}
+            >
             <div
               style={{
                 color: "#fff",
@@ -1023,7 +936,8 @@ export function App() {
               layers={layers}
               toggle={toggle}
             />
-          </div>
+            </div>
+          )}
 
           {/* Area list */}
           <div
@@ -1179,19 +1093,14 @@ export function App() {
           data={data}
           effectiveNodes={effectiveTNodes}
           effectiveEdges={effectiveTEdges}
-          layers={layers}
+          layers={renderedLayers}
           selectedArea={selectedArea}
           selectedNodeIds={selectedNodeIds}
           selectedEdgeKey={selectedEdgeKey}
           editMode={editMode === "edit"}
-          createMode={createMode}
-          moveNodeId={moveNodeId}
-          tempPolys={tempPolys}
           onSelectNode={handleSelectNode}
           onSelectEdge={handleSelectEdge}
           onDeselectAll={handleDeselectAll}
-          onNodeMoved={handleNodeMoved}
-          onCreateNode={handleCreateNode}
           meshOpacity={meshOpacity}
         />
       ) : loading ? (
