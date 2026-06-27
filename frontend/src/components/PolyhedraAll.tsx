@@ -1,8 +1,9 @@
 import { useMemo } from "react";
-import type { SceneData } from "../lib/types";
+import type { SceneData, PreprocessedPoly } from "../lib/types";
 
 interface Props {
   data: SceneData;
+  effectivePolys: PreprocessedPoly[];
   visible: boolean;
   showWireframe: boolean;
   selectedArea: number | null;
@@ -11,10 +12,10 @@ interface Props {
 const EMPTY = new Float32Array(0);
 
 /** Merged per-area poly vertex point cloud + optional internal wireframe. */
-export function PolyhedraAll({ data, visible, showWireframe, selectedArea }: Props) {
+export function PolyhedraAll({ data, effectivePolys, visible, showWireframe, selectedArea }: Props) {
   const groups = useMemo(() => {
     return data.areas.map((area) => {
-      const areaPolys = data.polys.filter((p) => p.areaId === area.id || (p.areaId === 0xffffffff && selectedArea === area.id));
+      const areaPolys = effectivePolys.filter((p) => p.areaId === area.id || (p.areaId === 0xffffffff && selectedArea === area.id));
       let totalVerts = 0;
       for (const p of areaPolys) totalVerts += p.positions.length / 3;
       const mpos = new Float32Array(totalVerts * 3);

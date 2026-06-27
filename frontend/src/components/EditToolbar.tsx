@@ -81,7 +81,7 @@ export function EditToolbar({
 
       {editing && (
         <span style={{ color: "#666", fontSize: 10, marginLeft: 4 }}>
-          Del=delete &middot; E=connect &middot; N=create &middot; G=move &middot; Esc=clear
+          Del=delete &middot; E=connect &middot; Esc=clear
         </span>
       )}
     </div>

@@ -1,8 +1,9 @@
 import { useMemo } from "react";
-import type { SceneData } from "../lib/types";
+import type { SceneData, PreprocessedPoly } from "../lib/types";
 
 interface Props {
   data: SceneData;
+  effectivePolys: PreprocessedPoly[];
   visible: boolean;
 }
 
@@ -11,13 +12,13 @@ interface Props {
  * Uses vertex colors so intra-area edges have solid color,
  * inter-area (if applicable) would gradient.
  */
-export function ObjectPolyEdges({ data, visible }: Props) {
+export function ObjectPolyEdges({ data, effectivePolys, visible }: Props) {
   if (!visible) return null;
 
   const lines = useMemo(() => {
     const result: { positions: Float32Array; colors: Float32Array; key: string }[] = [];
     const polyMap = new Map<number, { center: [number, number, number]; colorHex: string }>();
-    for (const p of data.polys) {
+    for (const p of effectivePolys) {
       polyMap.set(p.id, { center: p.center, colorHex: p.colorHex });
     }
 

@@ -38,6 +38,7 @@ import {
 } from "./lib/mutations";
 import type {
   SceneData,
+  PreprocessedPoly,
   TopologicalNode,
   TopologicalEdge,
   Mutations,
@@ -294,6 +295,7 @@ function Scene({
   data,
   effectiveNodes: tNodes,
   effectiveEdges: tEdges,
+  effectivePolys,
   layers,
   selectedArea,
   selectedNodeIds,
@@ -307,6 +309,7 @@ function Scene({
   data: SceneData;
   effectiveNodes: TopologicalNode[];
   effectiveEdges: TopologicalEdge[];
+  effectivePolys: PreprocessedPoly[];
   layers: Layers;
   selectedArea: number | null;
   selectedNodeIds: Set<number>;
@@ -367,6 +370,7 @@ function Scene({
         {(layers.polyPoints || layers.polyWireframe) && (
           <PolyhedraAll
             data={data}
+            effectivePolys={effectivePolys}
             visible={layers.polyPoints}
             showWireframe={layers.polyWireframe}
             selectedArea={selectedArea}
@@ -374,7 +378,7 @@ function Scene({
         )}
         {layers.polyMesh && (
           <PolyMesh
-            polys={data.polys}
+            polys={effectivePolys}
             visible
             opacity={meshOpacity}
             selectedArea={selectedArea}
@@ -399,7 +403,7 @@ function Scene({
           />
         )}
         {layers.objPolyEdges && (
-          <ObjectPolyEdges data={data} visible />
+          <ObjectPolyEdges data={data} effectivePolys={effectivePolys} visible />
         )}
 
         {/* Click handler: processes node/edge selection. */}
@@ -739,6 +743,16 @@ export function App() {
         : [],
     [data, mutations, effectiveTNodes],
   );
+
+  const effectivePolys = useMemo(
+    () => {
+      if (!data) return [];
+      const deleted = new Set(mutations.deletePolyIds);
+      return data.polys.filter((p) => !deleted.has(p.id));
+    },
+    [data, mutations],
+  );
+
   const renderedLayers = editMode === "edit" ? EDIT_ONLY_LAYERS : layers;
 
   return (
@@ -1093,6 +1107,7 @@ export function App() {
           data={data}
           effectiveNodes={effectiveTNodes}
           effectiveEdges={effectiveTEdges}
+          effectivePolys={effectivePolys}
           layers={renderedLayers}
           selectedArea={selectedArea}
           selectedNodeIds={selectedNodeIds}
