@@ -3,8 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
+    "preprocess": "bun run tools/preprocess.ts",
+    "dev": "bun run preprocess && vite",
+    "build": "bun run preprocess && tsc && vite build",
     "preview": "vite preview"
   },
   "dependencies": {

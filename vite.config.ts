@@ -11,6 +11,8 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    strictPort: true,
+    // Keep 5173 as the preferred port, but fall back when another dev server
+    // is already using it instead of failing startup.
+    strictPort: false,
   },
 });
