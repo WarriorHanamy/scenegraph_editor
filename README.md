@@ -2,14 +2,67 @@
 
 Web-based 3D topology editor for scene graph snapshots. View/delete topological nodes and create/delete topological edges.
 
-## Quick Start
+## Installation
+
+Install Bun if needed:
+
+```bash
+curl -fsSL https://bun.sh/install | bash
+```
+
+Then install project dependencies:
 
 ```bash
 bun install
+```
+
+## Quick Start
+
+```bash
 bun run dev
 ```
 
 Opens at `http://localhost:5173`.
+
+## Filesystem Contract
+
+```
+scenegraph_editor/
+├── backend/                     # Vite API plugin (express-style middleware)
+├── frontend/                    # React + R3F web editor
+├── scene_graph_saved/           # Immutable source snapshots (gitignored)
+│   └── <snapshot>/
+│       ├── scene_graph.json     # areas, polyhedrons, vertices, edges, facets, objects
+│       ├── manifest.json        # metadata: saved_at, summary counters
+│       └── objects/             # optional per-object data files
+├── scene_graph_exported/        # Export target (gitignored)
+│   └── <snapshot>/
+│       ├── scene_graph.json     # mutation result, written by POST /api/export
+│       └── manifest.json        # regenerated on export
+└── package.json
+```
+
+- **`scene_graph_saved/`** — never modified by the editor; treated as read-only canonical data.
+- **`scene_graph_exported/`** — export destination, created or overwritten on each `POST /api/export`.
+- **API read priority**: `GET /api/scene-graph` serves from `exported/` first, falls back to `saved/`.
+- **Snapshot naming convention**: `J30V2_whole-<YYYYMMDD>-<idx>`
+
+## CLI Commands
+
+| Command        | Description                                      |
+| -------------- | ------------------------------------------------ |
+| `bun run dev`  | Start Vite dev server on port 5173               |
+
+### API Endpoints
+
+| Method | Endpoint                          | Description                                       |
+| ------ | --------------------------------- | ------------------------------------------------- |
+| `GET`  | `/api/snapshot`                   | Returns the latest snapshot name                  |
+| `GET`  | `/api/snapshots`                  | Lists all available snapshots with metadata       |
+| `GET`  | `/api/scene-graph?snapshot=X`     | Serves `scene_graph.json` (exported first, then saved) |
+| `POST` | `/api/export`                     | Applies mutations and writes result to `scene_graph_exported/` |
+
+`/api/scene-graph` accepts optional `?source=saved` or `?source=exported` to force a specific source.
 
 ## Data Pipeline
 
@@ -100,7 +153,7 @@ scene_graph_exported/<snapshot>/scene_graph.json  ← exported result
 - `scene_graph_exported/` — export destination, created/overwritten on export
 - Data flow no longer requires PCD files or binary preprocessing
 
-## Web CRUD — Topological Nodes & Edges
+## Web UI — Topological Nodes & Edges
 
 Click **Edit** in the top toolbar to enter editing mode.
 
