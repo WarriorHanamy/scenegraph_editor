@@ -94,6 +94,7 @@ export interface Mutations {
 export interface ExportRequest {
   snapshot: string;
   mutations: Mutations;
+  base: "saved" | "exported";
 }
 
 export interface ExportResponse {

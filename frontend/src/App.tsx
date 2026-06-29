@@ -444,6 +444,7 @@ export function App() {
   );
   const [showDiff, setShowDiff] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [base, setBase] = useState<"saved" | "exported">("saved");
   const [connectionNotice, setConnectionNotice] =
     useState<ConnectionNotice | null>(null);
 
@@ -695,11 +696,25 @@ export function App() {
 
   // ---- reset ----
 
-  const handleReset = useCallback(() => {
+  const handleReset = useCallback(async () => {
     setEditHistory(createHistory(emptyMutations()));
     setSelectedNodeIds(new Set());
     setSelectedEdgeKey(null);
-  }, []);
+    setBase("saved");
+    if (snapshot) {
+      try {
+        setLoading(true);
+        const freshData = await loadSceneGraph(
+          `/api/scene-graph?snapshot=${snapshot}&source=saved`,
+        );
+        setData(freshData);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setLoading(false);
+      }
+    }
+  }, [snapshot]);
 
   // ---- snapshot switching ----
 
@@ -710,6 +725,7 @@ export function App() {
     setEditHistory(createHistory(emptyMutations()));
     setSelectedNodeIds(new Set());
     setSelectedEdgeKey(null);
+    setBase("saved");
     setError(null);
   }, [snapshot]);
 
@@ -722,26 +738,27 @@ export function App() {
       const resp = await fetch("/api/export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ snapshot, mutations }),
+        body: JSON.stringify({ snapshot, mutations, base }),
       });
       const json: ExportResponse = await resp.json();
       if (!json.success) {
         setError(`Export failed: ${json.error}`);
         return;
       }
-      // Reload data
+      // Reload data (will serve from exported/ now)
       const newData = await loadSceneGraph(`/api/scene-graph?snapshot=${snapshot}`);
       setData(newData);
       setEditHistory(createHistory(emptyMutations()));
       setSelectedNodeIds(new Set());
       setSelectedEdgeKey(null);
+      setBase("exported");
       setError(null);
     } catch (e: any) {
       setError(`Export error: ${e.message}`);
     } finally {
       setExporting(false);
     }
-  }, [dirty, exporting, snapshot, mutations]);
+  }, [dirty, exporting, snapshot, mutations, base]);
 
   // ---- layer toggle ----
 

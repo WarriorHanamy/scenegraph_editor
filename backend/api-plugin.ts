@@ -42,6 +42,7 @@ interface Mutations {
 interface ExportRequest {
   snapshot: string;
   mutations: Mutations;
+  base?: "saved" | "exported";
 }
 
 type V3 = [number, number, number];
@@ -441,8 +442,16 @@ export function apiPlugin(): Plugin {
               payload.snapshot,
             );
 
-            const sceneGraphPath = join(savedDir, "scene_graph.json");
-            const root = readJson(sceneGraphPath);
+            // Read from exported/ if base is "exported" (file exists), else fall back to saved/
+            let sourcePath: string;
+            if (payload.base === "exported") {
+              const exportedPath = join(exportedDir, "scene_graph.json");
+              try { statSync(exportedPath); sourcePath = exportedPath; }
+              catch { sourcePath = join(savedDir, "scene_graph.json"); }
+            } else {
+              sourcePath = join(savedDir, "scene_graph.json");
+            }
+            const root = readJson(sourcePath);
 
             applyMutations(root, payload.mutations);
 
