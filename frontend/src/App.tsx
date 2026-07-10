@@ -1,7 +1,8 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import type { RefObject } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
-import { OrbitControls, PerspectiveCamera } from "@react-three/drei";
+import { PerspectiveCamera } from "@react-three/drei";
+import { UnityCameraControls } from "./components/UnityCameraControls";
 import * as THREE from "three";
 import { AreaBox } from "./components/AreaBoxes";
 import { AreaEdges } from "./components/AreaEdges";
@@ -284,6 +285,36 @@ function ClickHandler({
   return null;
 }
 
+// ---- helpers ----
+
+function computeWorldBBox(data: SceneData): THREE.Box3 {
+  const box = new THREE.Box3();
+  const tmp = new THREE.Vector3();
+  let empty = true;
+
+  const rotate = (p: [number, number, number]): THREE.Vector3 =>
+    tmp.set(p[0], p[2], -p[1]);
+
+  for (const area of data.areas) {
+    box.expandByPoint(rotate(area.boxMin));
+    box.expandByPoint(rotate(area.boxMax));
+    empty = false;
+  }
+
+  if (empty) {
+    for (const node of data.topoNodes) {
+      box.expandByPoint(rotate(node.position));
+      empty = false;
+    }
+  }
+
+  if (empty) {
+    box.set(new THREE.Vector3(-15, -15, -15), new THREE.Vector3(15, 15, 15));
+  }
+
+  return box;
+}
+
 // ---- scene ----
 
 function Scene({
@@ -326,6 +357,8 @@ function Scene({
       return target;
     });
   }, []);
+
+  const sceneBox = useMemo(() => computeWorldBBox(data), [data]);
 
   const areaBoxes = useMemo(
     () =>
@@ -402,12 +435,7 @@ function Scene({
       </group>
 
       <gridHelper args={[80, 80, "#333", "#222"]} />
-      <OrbitControls
-        enableDamping
-        dampingFactor={0.1}
-        maxDistance={400}
-        minDistance={1}
-      />
+      <UnityCameraControls focusBox={sceneBox} />
     </Canvas>
   );
 }

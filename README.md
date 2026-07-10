@@ -199,6 +199,22 @@ The toolbar shows a change count when there are unsaved mutations.
 | `Ctrl+Z`   | Undo the previous edit                 |
 | `Ctrl+R`   | Redo the previously undone edit        |
 
+## Camera Controls
+
+Unity-style navigation (available in both main view and diff panel):
+
+| Input | Action |
+| ----- | ------ |
+| **Right-drag** | FPS look-around (yaw/pitch) |
+| **Right-drag + WASD** | Fly forward/left/back/right |
+| **Right-drag + Q / E** | Fly down / up |
+| **Right-drag + Shift** | Speed boost (3x) |
+| **Right-drag + Scroll** | Adjust flight speed |
+| **Middle-drag** | Pan (truck) |
+| **Alt + Left-drag** | Orbit around pivot |
+| **Scroll** | Dolly (zoom toward pivot) |
+| **F** | Focus entire scene |
+
 ## Layers Panel
 
 Toggle visibility of 3D elements in the right-side panel:
@@ -230,7 +246,8 @@ scenegraph_editor/
 │   │       ├── AreaEdges.tsx          # Area→Area adjacency lines
 │   │       ├── AreaCenters.tsx        # Area center spheres
 │   │       ├── PolyhedraAll.tsx       # Poly vertex points + wireframe
-│   │       └── PolyMesh.tsx           # Poly convex hull (transparent)
+│   │       ├── PolyMesh.tsx           # Poly convex hull (transparent)
+│   │       └── UnityCameraControls.tsx # Unity-style camera (FPS fly + orbit/pan/dolly)
 ├── scene_graph_saved/         # Immutable source data
 ├── scene_graph_exported/      # Export target (gitignored)
 └── package.json

@@ -1,12 +1,13 @@
 import { useEffect, useState, useRef } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { PerspectiveCamera, OrbitControls } from "@react-three/drei";
+import { PerspectiveCamera } from "@react-three/drei";
 import * as THREE from "three";
 import { loadSceneGraph } from "../lib/scene-loader";
 import type { SceneData } from "../lib/types";
 import { TopologicalNodes } from "./TopologicalNodes";
 import { TopologicalEdges } from "./TopologicalEdges";
 import { WorldAxes } from "./WorldAxes";
+import { UnityCameraControls, type UnityCameraControlsHandle } from "./UnityCameraControls";
 
 interface Props {
   snapshot: string;
@@ -33,7 +34,7 @@ function SyncedControls({
   masterLock: React.MutableRefObject<Side | null>;
 }) {
   const { camera, gl } = useThree();
-  const controlsRef = useRef<any>(null);
+  const controlsRef = useRef<UnityCameraControlsHandle>(null);
 
   useEffect(() => {
     const el = gl.domElement;
@@ -56,11 +57,10 @@ function SyncedControls({
       camera.position.copy(syncState.current.position);
       camera.quaternion.copy(syncState.current.quaternion);
       ctr.target.copy(syncState.current.target);
-      ctr.update();
     }
   });
 
-  return <OrbitControls ref={controlsRef} enableDamping={false} />;
+  return <UnityCameraControls ref={controlsRef} />;
 }
 
 // ---- stats bar ----
