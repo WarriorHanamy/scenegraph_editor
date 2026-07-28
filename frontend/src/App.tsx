@@ -15,6 +15,8 @@ import { WorldAxes } from "./components/WorldAxes";
 import { EditToolbar } from "./components/EditToolbar";
 import { ExportDiffPanel } from "./components/ExportDiffPanel";
 import { loadSceneGraph } from "./lib/scene-loader";
+import { loadSceneCloud } from "./lib/pcd";
+import { SceneCloud } from "./components/SceneCloud";
 import { pickTarget } from "./lib/picking";
 import type { PickTarget } from "./lib/picking";
 import {
@@ -49,6 +51,7 @@ import type {
 // ---- layers ----
 
 interface Layers {
+  sceneCloud: boolean;
   areas: boolean;
   areaEdges: boolean;
   areaCenters: boolean;
@@ -62,6 +65,7 @@ interface Layers {
 type LayerKey = keyof Layers;
 
 const EDIT_ONLY_LAYERS: Layers = {
+  sceneCloud: false,
   areas: false,
   areaEdges: false,
   areaCenters: false,
@@ -319,6 +323,7 @@ function computeWorldBBox(data: SceneData): THREE.Box3 {
 
 function Scene({
   data,
+  cloud,
   effectiveNodes: tNodes,
   effectiveEdges: tEdges,
   effectivePolys,
@@ -333,6 +338,7 @@ function Scene({
   meshOpacity,
 }: {
   data: SceneData;
+  cloud: { positions: Float32Array } | null;
   effectiveNodes: TopologicalNode[];
   effectiveEdges: TopologicalEdge[];
   effectivePolys: PreprocessedPoly[];
@@ -381,6 +387,9 @@ function Scene({
 
       <group ref={sceneGroupRef} rotation={[-Math.PI / 2, 0, 0]}>
         <WorldAxes />
+        {cloud && (
+          <SceneCloud positions={cloud.positions} visible={layers.sceneCloud} />
+        )}
         {areaBoxes}
         {layers.areaEdges && <AreaEdges areas={data.areas} visible />}
         {layers.areaCenters && (
@@ -449,6 +458,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [layers, setLayers] = useState<Layers>({
+    sceneCloud: true,
     areas: true,
     areaEdges: false,
     areaCenters: false,
@@ -460,6 +470,19 @@ export function App() {
   });
   const [selectedArea, setSelectedArea] = useState<number | null>(null);
   const [meshOpacity, setMeshOpacity] = useState(0.1);
+  const [cloud, setCloud] = useState<{ positions: Float32Array } | null>(null);
+
+  // Load the scene-level point cloud once (optional layer).
+  useEffect(() => {
+    (async () => {
+      try {
+        const parsed = await loadSceneCloud("/api/scene-cloud");
+        setCloud(parsed);
+      } catch {
+        setCloud(null);
+      }
+    })();
+  }, []);
 
   // Edit state
   const [editMode, setEditMode] = useState<EditMode>("view");
@@ -980,6 +1003,17 @@ export function App() {
             </div>
 
             <Toggle
+              label="Scene Cloud"
+              k="sceneCloud"
+              layers={layers}
+              toggle={toggle}
+            />
+
+            <div style={{ margin: "6px 0 4px", borderTop: "1px solid #333" }} />
+            <div style={{ fontSize: 10, color: "#888", marginBottom: 2 }}>
+              Areas
+            </div>
+            <Toggle
               label="Area Boxes"
               k="areas"
               layers={layers}
@@ -1155,6 +1189,7 @@ export function App() {
       {data ? (
         <Scene
           data={data}
+          cloud={cloud}
           effectiveNodes={effectiveTNodes}
           effectiveEdges={effectiveTEdges}
           effectivePolys={effectivePolys}

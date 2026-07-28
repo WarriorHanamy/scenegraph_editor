@@ -75,6 +75,23 @@ export const UnityCameraControls = forwardRef<
     };
   }, [focusBox]);
 
+  // Re-anchor the orbit/pan pivot onto the current view direction, keeping
+  // the current camera distance, then resync yaw/pitch/spherical state.
+  const syncFromCamera = () => {
+    const dist = camera.position.distanceTo(target.current);
+    const forward = new THREE.Vector3();
+    camera.getWorldDirection(forward);
+    target.current.copy(camera.position).addScaledVector(forward, dist);
+
+    const euler = new THREE.Euler(0, 0, 0, "YXZ");
+    euler.setFromQuaternion(camera.quaternion);
+    yaw.current = euler.y;
+    pitch.current = euler.x;
+    spherical.current.setFromVector3(
+      new THREE.Vector3().subVectors(camera.position, target.current),
+    );
+  };
+
   useEffect(() => {
     const el = gl.domElement;
 
@@ -90,6 +107,7 @@ export const UnityCameraControls = forwardRef<
     };
 
     const onUp = (e: PointerEvent) => {
+      if (e.button === 2 && mouse.current.right) syncFromCamera();
       if (e.button === 0) mouse.current.left = false;
       if (e.button === 1) mouse.current.middle = false;
       if (e.button === 2) mouse.current.right = false;
@@ -211,7 +229,9 @@ export const UnityCameraControls = forwardRef<
       camera.getWorldDirection(dir);
       const right = new THREE.Vector3().crossVectors(dir, camera.up).normalize();
       const up = new THREE.Vector3().crossVectors(right, dir).normalize();
-      const sens = 0.01 * Math.max(spherical.current.radius * 0.5, 1);
+      const sens =
+        0.01 *
+        Math.max(camera.position.distanceTo(target.current) * 0.5, 1);
       const offset = new THREE.Vector3()
         .addScaledVector(right, -panDelta.current.x * sens)
         .addScaledVector(up, panDelta.current.y * sens);

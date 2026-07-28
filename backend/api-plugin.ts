@@ -528,6 +528,31 @@ export function apiPlugin(): Plugin {
         },
       );
 
+      // Serve the scene-level PCD point cloud (first .pcd in scene/)
+      server.middlewares.use(
+        "/api/scene-cloud",
+        async (_req: IncomingMessage, res: ServerResponse) => {
+          try {
+            const sceneDir = join(PROJECT_ROOT, "scene");
+            const files = readdirSync(sceneDir)
+              .filter((f) => f.toLowerCase().endsWith(".pcd"))
+              .sort();
+            if (files.length === 0) {
+              sendJson(res, 404, { success: false, error: "No .pcd file in scene/" });
+              return;
+            }
+            const data = readFileSync(join(sceneDir, files[0]));
+            res.writeHead(200, {
+              "Content-Type": "application/octet-stream",
+              "X-PCD-Filename": files[0],
+            });
+            res.end(data);
+          } catch (err: any) {
+            sendJson(res, 500, { success: false, error: err.message });
+          }
+        },
+      );
+
       // Serve scene_graph.json
       //   ?snapshot=X           → exported/ first, fallback saved/
       //   ?snapshot=X&source=saved    → force saved/
